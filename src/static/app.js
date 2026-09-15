@@ -5,6 +5,45 @@ document.addEventListener("DOMContentLoaded", () => {
   const messageDiv = document.getElementById("message");
 
   // Function to fetch activities from API
+  function bindRemoveButtons() {
+    document.querySelectorAll(".remove-participant").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const activity = button.dataset.activity;
+        const email = button.dataset.email;
+
+        try {
+          const response = await fetch(
+            `/activities/${encodeURIComponent(activity)}/participants/${encodeURIComponent(email)}`,
+            {
+              method: "DELETE",
+            }
+          );
+
+          const result = await response.json();
+
+          if (response.ok) {
+            messageDiv.textContent = result.message;
+            messageDiv.className = "message success";
+            await fetchActivities();
+          } else {
+            messageDiv.textContent = result.detail || "Unable to unregister participant.";
+            messageDiv.className = "message error";
+          }
+
+          messageDiv.classList.remove("hidden");
+          setTimeout(() => {
+            messageDiv.classList.add("hidden");
+          }, 5000);
+        } catch (error) {
+          messageDiv.textContent = "Failed to unregister participant.";
+          messageDiv.className = "message error";
+          messageDiv.classList.remove("hidden");
+          console.error("Error unregistering participant:", error);
+        }
+      });
+    });
+  }
+
   async function fetchActivities() {
     try {
       const response = await fetch("/activities");
@@ -12,19 +51,52 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
+        activityCard.dataset.activityName = name;
 
-        const spotsLeft = details.max_participants - details.participants.length;
+        const participants = Array.isArray(details.participants) ? details.participants : [];
+        const spotsLeft = details.max_participants - participants.length;
+        const participantItems = participants.length
+          ? participants
+              .map(
+                (email) => `
+                  <li class="participant-item">
+                    <span class="participant-email">${email}</span>
+                    <button
+                      class="remove-participant"
+                      type="button"
+                      aria-label="Remove ${email} from ${name}"
+                      data-activity="${name}"
+                      data-email="${email}"
+                    >
+                      <span aria-hidden="true">✕</span>
+                    </button>
+                  </li>
+                `
+              )
+              .join("")
+          : '<li class="empty-state">No participants yet.</li>';
 
         activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <div class="activity-card-header">
+            <div>
+              <h4>${name}</h4>
+              <p class="activity-description">${details.description}</p>
+            </div>
+            <span class="spots-badge" data-max-participants="${details.max_participants}">${spotsLeft} spots left</span>
+          </div>
+          <p class="activity-schedule"><strong>Schedule:</strong> ${details.schedule}</p>
+          <div class="participants-section">
+            <h5>Participants</h5>
+            <ul class="participants-list">
+              ${participantItems}
+            </ul>
+          </div>
         `;
 
         activitiesList.appendChild(activityCard);
@@ -35,6 +107,8 @@ document.addEventListener("DOMContentLoaded", () => {
         option.textContent = name;
         activitySelect.appendChild(option);
       });
+
+      bindRemoveButtons();
     } catch (error) {
       activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
       console.error("Error fetching activities:", error);
@@ -60,11 +134,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (response.ok) {
         messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        messageDiv.className = "message success";
         signupForm.reset();
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        messageDiv.className = "message error";
       }
 
       messageDiv.classList.remove("hidden");
